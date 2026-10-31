@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Unlock Theater</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Creepster&family=Bungee&family=Nunito:wght@600;800&family=JetBrains+Mono:wght@600&display=swap">
+<style>
+/* Layout: a dark theater. Video on top; when the minute is up, a locked door slides over it with one question. */
+:root{--bg:#120a1f;--panel:#1d1230;--ink:#f6eeff;--muted:#bba8d8;--line:#3b2a5a;--orange:#ff8a1f;--purple:#b07cff;--good:#7cff6b;--bad:#ff4d6d;--gold:#ffc23d;
+ --spook:"Creepster","Bungee",Impact,sans-serif;--disp:"Bungee",Impact,sans-serif;--body:"Nunito",system-ui,sans-serif;--mono:"JetBrains Mono",ui-monospace,monospace;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(ellipse at 50% -10%,#3a1a5c 0,transparent 60%),var(--bg);color:var(--ink);font-family:var(--body);font-size:18px;min-height:100vh;
+ padding:12px max(16px,env(safe-area-inset-left)) 24px max(16px,env(safe-area-inset-right))}
+.wrap{max-width:900px;margin:0 auto;display:flex;flex-direction:column;gap:12px}
+h1{font-family:var(--spook);font-weight:400;font-size:clamp(30px,6vw,46px);margin:0;color:var(--orange);letter-spacing:.04em}
+.top{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-family:var(--mono);font-size:14px;background:var(--panel);border:2px solid var(--line);border-radius:999px;padding:4px 10px}
+.panel{background:var(--panel);border:2px solid var(--line);border-radius:16px;padding:16px;display:flex;flex-direction:column;gap:12px}
+.btn{font:inherit;font-weight:800;font-size:17px;padding:10px 14px;border-radius:12px;border:2px solid var(--line);background:var(--panel);color:var(--ink);cursor:pointer}
+.btn.go{background:var(--orange);border-color:var(--orange);color:#1a0b00}
+.btn:focus-visible{outline:3px solid var(--gold);outline-offset:2px}
+.row{display:flex;gap:8px;flex-wrap:wrap}
+textarea,input[type=number]{font:inherit;font-size:16px;background:var(--bg);color:var(--ink);border:2px solid var(--line);border-radius:10px;padding:8px;width:100%}
+.skills{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:4px 12px;font-size:16px}
+.stage{position:relative;width:100%;aspect-ratio:16/9;background:#000;border-radius:14px;overflow:hidden}
+#yt{position:absolute;inset:0;width:100%;height:100%}
+.lock{position:absolute;inset:0;background:linear-gradient(90deg,#2a1608 0 49.6%,#120a1f 49.6% 50.4%,#2a1608 50.4%);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px;text-align:center;overflow:auto;transition:transform .5s}
+.lock[hidden]{display:none}
+.lock .door{font-size:44px}
+.q{font-size:clamp(17px,3vw,24px);font-weight:800;max-width:720px}
+.opts{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:8px;width:100%;max-width:720px}
+.opt{font:inherit;font-weight:800;font-size:16px;padding:10px;border-radius:12px;border:2px solid var(--purple);background:var(--panel);color:var(--ink);cursor:pointer;text-align:left}
+.opt b{font-family:var(--disp);color:var(--gold);margin-right:6px}
+.msg{font-weight:800;max-width:720px}.msg.g{color:var(--good)}.msg.b{color:var(--bad)}
+.why{font-size:15px;color:var(--muted);max-width:720px}
+.ty{font:inherit;font-size:17px;padding:8px;border-radius:10px;border:2px solid var(--gold);background:var(--bg);color:var(--ink);width:min(520px,100%)}
+.vids{display:flex;gap:8px;flex-wrap:wrap}
+.bar{height:10px;background:var(--line);border-radius:999px;overflow:hidden}.bar i{display:block;height:100%;background:var(--orange);transition:width .4s}
+.muted{color:var(--muted)}
+table{border-collapse:collapse;width:100%;font-size:15px}td,th{border-bottom:1px solid var(--line);padding:5px;text-align:left}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style></head><body><div class="wrap" id="app"></div>
+<script src="https://www.youtube.com/iframe_api"></script>
+<script>
+// ---------- exact decimals ----------
+const R=(a,b)=>a+Math.floor(Math.random()*(b-a+1)),pick=a=>a[Math.floor(Math.random()*a.length)],shuffle=a=>a.map(x=>[Math.random(),x]).sort((p,q)=>p[0]-q[0]).map(x=>x[1]);
+const D=(i,p)=>({i,p});
+function norm(x){let i=x.i,p=x.p;while(p>0&&i%10===0){i/=10;p--}return{i,p}}
+function fmt(x){x=norm(x);let s=String(x.i);if(!x.p)return s;while(s.length<=x.p)s="0"+s;return s.slice(0,-x.p)+"."+s.slice(-x.p)}
+const big=n=>n>=1000?n.toLocaleString("en-US"):String(n);
+function opts(correct,wrongs){const set=[correct];for(const w of wrongs)if(!set.includes(w)&&set.length<4)set.push(w);return{o:shuffle(set),a:correct}}
+
+// ---------- question makers: every maker takes a level L (1 easy .. 4 hard) ----------
+const cap=s=>s[0].toUpperCase()+s.slice(1);
+const num=x=>Number(fmt(x)); // only for comparisons of small values
+function cmpD(a,b){const P=Math.max(a.p,b.p);const x=a.i*10**(P-a.p),y=b.i*10**(P-b.p);return x>y?">":x<y?"<":"="}
+const PLACES=["ones","tenths","hundredths","thousandths","ten-thousandths"];
+function rnd(dp,wholeMax){return D(R(1,wholeMax)*10**dp+R(0,10**dp-1),dp)}
+function roundD(x,keep){if(x.p<=keep)return x;const div=10**(x.p-keep);return D(Math.floor((x.i+div/2)/div),keep)}
+const Q={
+ m1(L){const dp=Math.min(4,L+1);const ds=shuffle([1,2,3,4,5,6,7,8,9]).slice(0,dp+1);const n=D(Number(ds.join("")),dp);const k=R(1,dp);const dg=ds[ds.length-1-(dp-k)];
+   if(L>=3&&Math.random()<.5){return{q:`Which digit is in the ${PLACES[k]} place of ${fmt(n)}?`,...opts(String(dg),ds.filter(d=>d!==dg).map(String)),why:`Count places after the point: ${PLACES.slice(1,k+1).join(", ")}.`}}
+   const wr=[1,2,3,4].filter(j=>j!==k&&j<=dp+1).map(j=>fmt(D(dg,j)));wr.push(String(dg));
+   return{q:`What is the ${dg} worth in ${fmt(n)}?`,...opts(fmt(D(dg,k)),wr),why:`The ${dg} is in the ${PLACES[k]} place.`}},
+ m2(L){const dp=Math.min(4,L+1);let a=rnd(dp,L>=3?9:3);let b;const t=R(0,2);
+   if(t===0&&fmt(a).includes(".")){const s=fmt(a).split(".");b=parse0(s[0]+"."+s[1].slice(0,1)+"0"+s[1].slice(1))}
+   else if(t<=1){b=D(a.i*10,a.p+1)}else{b=D(a.i+(Math.random()<.5?1:-1)*10**R(0,1),a.p);if(L>=3)b=D(b.i*10+R(1,9),b.p+1)}
+   if(Math.random()<.5)[a,b]=[b,a];return{q:`${fmtK(a,a.p)}  ?  ${fmtK(b,b.p)}`,o:[">","<","="],a:cmpD(a,b),why:"Add zeros so both have the same places, then compare from the left."}},
+ m3(L){const dp=L>=3?4:3;let x=rnd(dp,L>=4?99:9);if(L>=3&&Math.random()<.6){const s=String(x.i);x=D(Number(s.slice(0,-3)+"9"+R(5,9)+R(0,9)),dp)}
+   const keep=L>=4?pick([0,1,2]):pick([1,2]);const name=keep===0?"whole number":keep===1?"tenth":"hundredth";const r=roundD(x,keep);
+   const tr=D(Math.floor(x.i/10**(x.p-keep)),keep);
+   return{q:`Round ${fmt(x)} to the nearest ${name}.`,...opts(fmtK(r,keep),[fmtK(tr,keep),fmtK(D(tr.i+(r.i===tr.i?1:2),keep),keep),fmt(roundD(x,keep+1)),fmtK(D(r.i+1,keep),keep),fmtK(D(Math.max(0,r.i-1),keep),keep),fmtK(D(r.i+2,keep),keep)]),why:"Look at the digit just to the right of that place: 5 or more rounds up (and can carry)."}},
+ m4(L){const terms=L>=4&&Math.random()<.5?3:2;const add=terms===3||Math.random()<.5;let xs=[];for(let k=0;k<terms;k++)xs.push(D(R(1,L>=3?999:99)*(k===0&&!add&&L>=3?10:1),R(0,Math.min(3,L))));
+   if(!add&&L>=3&&Math.random()<.5)xs[0]=D(R(5,40),0);
+   const P=Math.max(...xs.map(x=>x.p));const v=xs.map(x=>x.i*10**(P-x.p));if(!add&&v[1]>v[0]){[xs[0],xs[1]]=[xs[1],xs[0]];[v[0],v[1]]=[v[1],v[0]]}
+   const res=add?v.reduce((s,y)=>s+y,0):v[0]-v[1];if(!add&&res===0)return Q.m4(L);const c=D(res,P);
+   const mis=D(add?xs.reduce((s,x)=>s+x.i,0):Math.abs(xs[0].i-xs[1].i),Math.max(...xs.map(x=>x.p)));
+   return{q:xs.map(fmt).join(add?" + ":" − ")+" = ?",...opts(fmt(c),[fmt(mis),fmt(D(res+10**Math.max(0,P-1),P)),fmt(D(Math.abs(res-10**P),P)),fmt(D(res+10**P,P))]),why:"Line up the points and fill empty places with zeros first."}},
+ m5(L){const a=L===1?R(12,99):L===2?R(101,999):L===3?R(101,999):R(1001,9999),b=L===1?R(12,99):L===2?R(12,99):L===3?R(101,999):R(12,99);const c=a*b;
+   const bd=String(b).split("").reverse().map(Number);const no=bd.reduce((s,d)=>s+a*d,0);
+   return{q:`${big(a)} × ${big(b)} = ?`,...opts(big(c),[big(no),big(c+a),big(c-10*a),big(c+100)]),why:"Each new row starts with placeholder zeros: one zero for tens, two for hundreds."}},
+ m6(L){const x=L>=3?D(R(1,99),R(1,3)):D(R(11,999),R(1,2));const k=L===1?1:L===2?R(1,2):3;const mulp=Math.random()<.5;
+   const sh=k2=>{if(k2>=0)return x.p>=k2?D(x.i,x.p-k2):D(x.i*10**(k2-x.p),0);return D(x.i,x.p-k2)};const c=sh(mulp?k:-k);
+   return{q:`${fmt(x)} ${mulp?"×":"÷"} ${big(10**k)} = ?`,...opts(fmt(c),[fmt(sh(mulp?-k:k)),fmt(sh(mulp?k-1:-(k-1))),fmt(sh(mulp?k+1:-(k+1)))]),why:`${k} zero${k>1?"s":""}: move the point ${k} place${k>1?"s":""} ${mulp?"right":"left"}.`}},
+ m7(L){const a=L===1?D(R(2,9),1):L===2?D(R(11,99),1):L===3?D(R(101,999),2):D(R(101,999),2),b=L===1?D(R(2,9),1):L===2?D(R(11,49),1):L===3?D(R(11,99),1):D(R(101,499),2);
+   const w=a.i*b.i,p=a.p+b.p;return{q:`${fmt(a)} × ${fmt(b)} = ?`,...opts(fmt(D(w,p)),[fmt(D(w,p-1)),fmt(D(w,p+1)),fmt(D(w,Math.max(a.p,b.p))),fmt(D(w+a.i,p))]),why:`${a.i} × ${b.i} = ${w}; ${a.p} + ${b.p} = ${p} places.`}},
+ m8(L){const pa=L>=3?R(2,3):R(1,2),pb=L>=4?R(2,3):R(1,2);let a=D(R(1,9),pa),b=D(R(1,9),pb);if(L>=3&&Math.random()<.4){a=D(pick([25,125,5,75]),pick([2,3]));b=D(pick([4,8,2,6]),R(1,2))}
+   const w=a.i*b.i,p=a.p+b.p;return{q:`${fmt(a)} × ${fmt(b)} = ?`,...opts(fmt(D(w,p)),[fmt(D(w,p-1)),fmt(D(w,Math.max(0,p-2))),fmt(D(w,p+1))]),why:`${a.i} × ${b.i} = ${w}; it needs ${p} places, so fill zeros in front.`}},
+};
+function parse0(s){const k=s.indexOf(".");if(k<0)return D(+s,0);const f=s.slice(k+1);return D(parseInt(s.slice(0,k)+f,10),f.length)}
+function fmtK(x,keep){if(keep===0)return String(x.i);let s=String(x.i);while(s.length<=keep)s="0"+s;return s.slice(0,-keep)+"."+s.slice(-keep)}
+
+// ---------- sentence building blocks ----------
+const SUBJ=["the pumpkin carver","the witch next door","the tired vampire","the costume contest judge","Sam","Leo","my older cousin","the soccer team","our science teacher","the hungry puppy","my grandmother","the team captain","the new librarian","the curious raccoon","the kids next door","the bus driver","our neighbor","the class hamster","my best friend","the coach"];
+const PRED=[["carved a spooky jack-o'-lantern","carve a spooky jack-o'-lantern"],["sorted the Halloween candy","sort the Halloween candy"],["decorated the haunted porch","decorate the haunted porch"],["sewed a vampire cape","sew a vampire cape"],["hung paper bats from the ceiling","hang paper bats from the ceiling"],["stirred the bubbling cider","stir the bubbling cider"],["trick-or-treated on Maple Street","trick-or-treat on Maple Street"],["found a glowing skeleton key","find a glowing skeleton key"],["finished the puzzle","finish the puzzle"],["raced across the field","race across the field"],["forgot the homework folder","forget the homework folder"],["built a cardboard rocket","build a cardboard rocket"],["cleaned the messy garage","clean the messy garage"],["read three chapters","read three chapters"],["baked banana muffins","bake banana muffins"],["fixed the broken bike chain","fix the broken bike chain"],["practiced the piano piece","practice the piano piece"],["found a shiny coin","find a shiny coin"],["painted the old fence","paint the old fence"],["wrote a long letter","write a long letter"],["watered the tomato plants","water the tomato plants"],["packed the lunch boxes","pack the lunch boxes"],["swept the kitchen floor","sweep the kitchen floor"],["climbed the tall ladder","climb the tall ladder"]];
+const SUB=["because","although","when","after","before","since","until","while","if","as soon as","even though","whenever"];
+const PP=["on Halloween night","under the full moon","inside the haunted house","after the costume parade","behind the creaky gate","before the clock struck midnight","after a long day at school","before the big game on Saturday","during the noisy assembly","under the old oak tree","in the middle of the afternoon","with a grin on his face","since last winter","at the end of recess","without any help","near the back door"];
+const FAN=["and","but","so","yet","or"];
+const twoS=()=>{const s=shuffle(SUBJ.slice());return[s[0],s[1],s[2]]};
+const twoP=()=>{const p=shuffle(PRED.slice());return[p[0],p[1],p[2]]};
+const IC=(s,p)=>`${s} ${p[0]}`;
+const DC=(s,p)=>`${pick(SUB)} ${s} ${p[0]}`;
+function structure(L,allow){const [s1,s2,s3]=twoS(),[p1,p2,p3]=twoP();const long=L>=3,pp=pick(PP);
+ const types=allow||["simple","compound","complex","compound-complex"];const t=pick(types);let x;
+ if(t==="simple")x=pick([()=>`${cap(pp)}, ${s1} ${p1[0]} and ${p2[0]}`,()=>`${cap(s1)} and ${s2} ${p1[0]} ${pp}`,()=>`${cap(s1)} ${p1[0]} ${pp}`,()=>`${cap(pp)}, ${s1} and ${s2} ${p1[0]}`])();
+ if(t==="compound")x=`${cap(IC(s1,p1))}${long?" "+pp:""}, ${pick(FAN)} ${IC(s2,p2)}`;
+ if(t==="complex")x=Math.random()<.5?`${cap(DC(s1,p1))}${long?" "+pp:""}, ${IC(s2,p2)}`:`${cap(IC(s2,p2))}${long?" "+pp:""} ${DC(s1,p1)}`;
+ if(t==="compound-complex")x=Math.random()<.5?`${cap(DC(s1,p1))}, ${IC(s2,p2)}, ${pick(FAN)} ${IC(s3,p3)}`:`${cap(IC(s2,p2))}, ${pick(FAN)} ${IC(s3,p3)} ${DC(s1,p1)}`;
+ return{s:x+".",t}}
+const WHY_STRUCT={"simple":"Only one independent clause; a phrase like \"after a long day\" has no verb, and two verbs sharing one subject is still one clause.","compound":"Two independent clauses joined by a FANBOYS word.","complex":"One independent clause plus a dependent clause that starts with a word like because/when/although.","compound-complex":"Two independent clauses (FANBOYS) plus a dependent clause."};
+const G={
+ g1(L){const [s1]=twoS(),[p1]=twoP();const t=pick(["statement","question","command","exclamation"]);let x;
+   if(t==="statement")x=L>=3?pick([`${cap(s1)} asked whether we could ${p1[1]}.`,`I wonder if ${s1} will ${p1[1]}.`,`${cap(s1)} ${p1[0]} ${pick(PP)}.`]):`${cap(s1)} ${p1[0]}.`;
+   if(t==="question")x=L>=3?`${cap(pick(PP))}, did ${s1} ${p1[1]}?`:`Did ${s1} ${p1[1]}?`;
+   if(t==="command")x=L>=3?pick([`${cap(pick(SUB.filter(w=>["when","after","before","as soon as"].includes(w))))} you get home, please ${p1[1]}.`,`Please remember to ${p1[1]} ${pick(PP)}.`,`Don't forget to ${p1[1]}.`]):pick([`Please ${p1[1]}.`,`${cap(p1[1])}.`]);
+   if(t==="exclamation")x=L>=3?`Wow, ${s1} ${p1[0]} ${pick(PP)}!`:`Wow, ${s1} ${p1[0]}!`;
+   return{q:`"${x}"`,o:["statement","question","command","exclamation"],a:t,why:t==="statement"&&L>=3?"It tells about a question someone asked, but it ends with a period: a statement.":t==="command"?"It tells someone (You) to do something.":"Check what the sentence DOES: tell, ask, order, or show strong feeling."}},
+ g2(L){const [p1]=twoP();const words=p1[1].split(" ");const [s1]=twoS();const nm=cap(s1);const form=L>=3?R(0,2):R(3,5);const x=[`${cap(pick(["when","after","before","as soon as"]))} you finish dinner, please ${p1[1]}.`,`${nm}, please ${p1[1]} ${pick(PP)}.`,`Please ${p1[1]} ${pick(PP)}.`,`Please ${p1[1]}.`,`${cap(p1[1])}, please.`,`${cap(p1[1])} ${pick(PP)}.`][form];
+   return{q:`Subject of "${x}"`,...opts("(You)",[words[words.length-1],form===0?"you (in \"you finish\")":form===1?nm:"please",words[0]]),why:"The main clause is a command, so its subject is the hidden (You)."}},
+ g3(L){const H=[["the box of old toys","box","toys"],["the players on our team","players","team"],["my little sister with curly hair","sister","hair"],["the keys to the shed","keys","shed"],["the leader of the scouts","leader","scouts"],["a basket of ripe apples","basket","apples"],["the students in Room 12","students","Room"],["the dog with muddy paws","dog","paws"],["the friends from my soccer camp","friends","camp"],["the cover of the library book","cover","book"],["the noise from the kitchen","noise","kitchen"],["the girl beside the window","girl","window"]];
+   const h=pick(H),[p1]=twoP();const x=L>=3&&Math.random()<.4?`${cap(pick(PP))}, ${h[0]} ${p1[0]}.`:`${cap(h[0])} ${p1[0]}.`;
+   return{q:`Simple subject: "${x}"`,...opts(h[1],[h[2],p1[0].split(" ")[0],h[0].split(" ").slice(-1)[0]]),why:`Find the verb (${p1[0].split(" ")[0]}), then ask who did it. Nouns inside phrases like "of..." or "with..." are never the subject.`}},
+ g4(L){const [s1,s2]=twoS(),[p1,p2]=twoP();const t=pick(["compound subject","compound predicate","compound sentence"]);const pp=L>=3?" "+pick(PP):"";let x;
+   if(t==="compound subject")x=`${cap(s1)} and ${s2} ${p1[0]}${pp}.`;if(t==="compound predicate")x=`${cap(s1)} ${p1[0]}${pp} and ${p2[0]}.`;if(t==="compound sentence")x=`${cap(s1)} ${p1[0]}${pp}, ${pick(FAN)} ${s2} ${p2[0]}.`;
+   return{q:`"${x}"`,o:["compound subject","compound predicate","compound sentence"],a:t,why:"Compound sentence = two subject+verb sentences joined by a FANBOYS word."}},
+ g5(L){const [s1]=twoS(),[p1]=twoP();const w=pick(["before","after","since","until"]);const nouns=["the game","lunch","the storm","the long weekend","recess","the concert"];const t=pick(["phrase","dependent clause","independent clause"]);let x;
+   if(t==="phrase")x=L>=3&&Math.random()<.5?pick(["because of the rain","during the long assembly","after the exciting game"]):`${w} ${pick(nouns)}`;
+   if(t==="dependent clause")x=`${L>=3?pick(SUB):w} ${s1} ${p1[0]}`;if(t==="independent clause")x=`${s1} ${p1[0]}`;
+   return{q:`"${x}" is a...`,o:["phrase","dependent clause","independent clause"],a:t,why:"No verb = phrase. A starter word + subject + verb = dependent clause. Subject + verb alone = independent."}},
+ g6(L){const r=structure(L,["simple","compound","complex"]);return{q:`"${r.s}"`,o:["simple","compound","complex"],a:r.t,why:WHY_STRUCT[r.t]}},
+ g7(L){const r=structure(Math.max(L,3));return{q:`"${r.s}"`,o:["simple","compound","complex","compound-complex"],a:r.t,why:WHY_STRUCT[r.t]}},
+ g8(L){const [s1,s2]=twoS(),[p1,p2]=twoP();const t=pick(["fragment","run-on","comma splice","correct"]);let x;const pp=L>=3?" "+pick(PP):"";
+   if(t==="fragment")x=pick([`${cap(DC(s1,p1))}${pp}.`,`${cap(pick(PP))}.`,`${cap(pick(["running","racing","hurrying","laughing"]))} ${pick(PP)}.`]);
+   if(t==="run-on")x=`${cap(IC(s1,p1))}${pp} ${IC(s2,p2)}.`;if(t==="comma splice")x=`${cap(IC(s1,p1))}${pp}, ${IC(s2,p2)}.`;
+   if(t==="correct")x=pick([`${cap(IC(s1,p1))}${pp}, ${pick(FAN)} ${IC(s2,p2)}.`,`${cap(DC(s1,p1))}, ${IC(s2,p2)}.`]);
+   return{q:`"${x}"`,o:["fragment","run-on","comma splice","correct"],a:t,why:"Fragment = not a complete thought. Run-on = two sentences with nothing between. Comma splice = only a comma between them."}},
+ g9(L){const [s1,s2]=twoS(),[p1,p2]=twoP();const kind=pick(["compound","dcfirst","dclast"]);const f=pick(FAN),d=DC(s1,p1);let good,bad;
+   if(kind==="compound"){good=`${cap(IC(s1,p1))}, ${f} ${IC(s2,p2)}.`;bad=[`${cap(IC(s1,p1))} ${f}, ${IC(s2,p2)}.`,`${cap(IC(s1,p1))} ${f} ${IC(s2,p2)}.`,`${cap(s1)}, ${p1[0]} ${f} ${IC(s2,p2)}.`]}
+   if(kind==="dcfirst"){good=`${cap(d)}, ${IC(s2,p2)}.`;bad=[`${cap(d)} ${IC(s2,p2)}.`,`${cap(d.split(" ")[0])}, ${d.split(" ").slice(1).join(" ")} ${IC(s2,p2)}.`]}
+   if(kind==="dclast"){good=`${cap(IC(s2,p2))} ${d}.`;bad=[`${cap(IC(s2,p2))} ${d.split(" ")[0]}, ${d.split(" ").slice(1).join(" ")}.`,`${cap(s2)}, ${p2[0]} ${d}.`]}
+   return{q:"Which is punctuated correctly?",...opts(good,bad),why:"Comma before the FANBOYS word; comma after a dependent clause that comes FIRST; usually none when it comes last."}}
+};
+// ---------- Level 5: the hardest tier ----------
+const PEOPLE=["the pumpkin carver","the costume contest judge","the witch next door","Sam","Leo","my older cousin","our science teacher","my grandmother","the team captain","the new librarian","the bus driver","our neighbor","my best friend","the coach"];
+const twoPeople=()=>shuffle(PEOPLE.slice()).slice(0,3);
+const PV=["ones","tenths","hundredths","thousandths"];
+const val=x=>x.i/10**x.p;
+function digitAt(x,k){const s=fmtK(x,x.p).replace(".","");return Number(s[s.length-1-(x.p-k)])}
+const H5={
+ m1(){if(Math.random()<.5){const d=R(2,9);let k1=R(0,3),k2=R(0,3);while(k2===k1)k2=R(0,3);
+     const mk=k=>{const ds=shuffle([1,2,3,4,5,6,7,8,9].filter(x=>x!==d)).slice(0,4);ds[3-k]=d;return D(Number(ds.join("")),3)};
+     const a=mk(k1),b=mk(k2);const diff=k2-k1;const name=diff>0?`${big(10**diff)} times as much`:`1/${big(10**-diff)} as much`;
+     return{q:`The ${d} in ${fmt(a)} is worth how much compared to the ${d} in ${fmt(b)}?`,...opts(name,["10 times as much","100 times as much","1,000 times as much","1/10 as much","1/100 as much"].filter(x=>x!==name).slice(0,4).sort(()=>Math.random()-.5)),why:`Each place to the left is 10 times bigger. The first ${d} is in the ${PV[k1]}, the second in the ${PV[k2]}.`}}
+   const t=R(1,9),o=R(0,9),h=R(1,9),th=R(1,9);const skip=pick(["t","h"]);const parts=[`${t} × 10`,`${o} × 1`];let x;
+   if(skip==="t"){parts.push(`${h} × (1/100)`,`${th} × (1/1,000)`);x=D(Number(`${t}${o}0${h}${th}`),3)}else{parts.push(`${h} × (1/10)`,`${th} × (1/1,000)`);x=D(Number(`${t}${o}${h}0${th}`),3)}
+   const wrong=skip==="t"?[`${t}${o}.${h}${th}`,`${t}${o}.${h}0${th}`,`${t}${o}${h}.${th}`]:[`${t}${o}.${h}${th}`,`${t}${o}.0${h}${th}`,`${t}${o}${h}.${th}`];
+   return{q:`${parts.join(" + ")} = ?`,...opts(fmt(x),wrong),why:"A missing place still needs a 0 holding its spot."}},
+ m2(){const base=R(1,9);const xs=shuffle([D(base*100+R(0,9)*10+R(1,9),3),D(base*10+R(1,9),2),D(base,1),D(R(1,9)*10+R(1,9),3)]);
+   const uniq=new Set(xs.map(val));if(uniq.size<4)return H5.m2();
+   const sorted=xs.slice().sort((a,b)=>val(a)-val(b));const S=a=>a.map(fmt).join(", ");
+   const byLen=xs.slice().sort((a,b)=>fmt(a).length-fmt(b).length||val(a)-val(b));const byStr=xs.slice().sort((a,b)=>Number(fmt(a).replace("0.",""))-Number(fmt(b).replace("0.","")));
+   return{q:`Order least to greatest: ${S(xs)}`,...opts(S(sorted),[S(byLen),S(sorted.slice().reverse()),S(byStr),S(xs)]),why:"Give them all the same number of places (add zeros), then compare."}},
+ m3(){if(Math.random()<.5){const tgt=D(R(11,199),1);const lo=tgt.i*100-50,hi=tgt.i*100+49;const c=D(R(lo,hi),3);
+     return{q:`Which number rounds to ${fmt(tgt)} (nearest tenth)?`,...opts(fmtK(c,3),[fmtK(D(hi+1,3),3),fmtK(D(lo-1,3),3),fmtK(D(tgt.i*100+R(60,95),3),3)]),why:`Numbers from ${fmtK(D(lo,3),3)} up to ${fmtK(D(hi,3),3)} round to ${fmt(tgt)}.`}}
+   const whole=R(1,49);const x=D(whole*1000+R(995,999),3);const keep=pick([1,2]);const r=roundD(x,keep);
+   return{q:`Round ${fmt(x)} to the nearest ${keep===1?"tenth":"hundredth"}.`,...opts(fmtK(r,keep),[fmtK(D(r.i-1,keep),keep),`${whole}.${keep===1?"10":"100"}`,fmtK(D(whole*10**keep+10**keep-1,keep),keep)]),why:"Rounding 9s up carries into the next place, all the way to the ones."}},
+ m4(){const t=R(0,2);
+   if(t===0){const a=D(R(101,999),2),b=D(R(11,99),1);const c=D(a.i+b.i*10,2);return{q:`? − ${fmt(a)} = ${fmt(b)}`,...opts(fmt(c),[fmt(D(Math.abs(b.i*10-a.i),2)),fmt(D(a.i+b.i,2)),fmt(D(c.i+100,2))]),why:"Undo subtraction with addition: line up the points and add."}}
+   if(t===1){const W=R(8,20),c=D(R(1001,W*1000-1001),3);const b=D(W*1000-c.i,3);return{q:`${W} − ? = ${fmtK(c,3)}`,...opts(fmtK(b,3),[fmtK(D(W*1000-c.i+1000,3),3),fmtK(D(Math.abs(W-c.i),3),3),fmtK(D(b.i+10,3),3)]),why:`Write ${W} as ${W}.000 and line up the points.`}}
+   const have=pick([10,20,50]),a=R(150,899),b=R(99,499);const left=have*100-a-b;if(left<=0)return H5.m4();
+   return{q:`Sam had $${have}. He bought a book for $${fmtK(D(a,2),2)} and a snack for $${fmtK(D(b,2),2)}. How much money is left?`,...opts(`$${fmtK(D(left,2),2)}`,[`$${fmtK(D(have*100-a+b,2),2)}`,`$${fmtK(D(a+b,2),2)}`,`$${fmtK(D(left+100,2),2)}`]),why:"Two steps: add the costs, then subtract from what he had."}},
+ m5(){if(Math.random()<.5){const a=R(1001,9999),b=pick([R(101,109)*1,R(1,9)*100+R(1,9),R(201,909)]);const bb=String(b).includes("0")?b:Number(String(b)[0]+"0"+String(b)[2]);
+     const c=a*bb;const ds=String(bb).split("").reverse().map(Number);const noShift=ds.reduce((s,d)=>s+a*d,0);const skipZero=a*(ds[0]+ds[2]*10);
+     return{q:`${big(a)} × ${big(bb)} = ?`,...opts(big(c),[big(noShift),big(skipZero),big(c+a*10)]),why:"A 0 in the middle still needs its own place: the hundreds row gets two zeros."}}
+   const boxes=R(112,489),per=R(24,96);return{q:`A school orders ${boxes} boxes with ${per} pencils in each. How many pencils?`,...opts(big(boxes*per),[big(boxes*(per%10)+boxes*Math.floor(per/10)),big(boxes+per),big(boxes*per+boxes)]),why:"Equal groups means multiply. Row 2 starts with a zero."}},
+ m6(){const t=R(0,3);const x=D(R(11,99),R(1,2));
+   if(t===0){const k1=R(2,3),k2=R(1,2);const r=shift2(x,k1-k2);return{q:`${fmt(x)} × ${big(10**k1)} ÷ ${big(10**k2)} = ?`,...opts(fmt(r),[fmt(shift2(x,k1+k2)),fmt(shift2(x,k2-k1)),fmt(shift2(x,k1))]),why:`Right ${k1}, then left ${k2}: net ${Math.abs(k1-k2)} ${k1>k2?"right":"left"}.`}}
+   if(t===1){const k=R(2,3);const y=shift2(x,k);return{q:`? × ${big(10**k)} = ${fmt(y)}`,...opts(fmt(x),[fmt(shift2(y,k)),fmt(shift2(x,1)),fmt(shift2(x,-1))]),why:`Undo × ${big(10**k)} by dividing: move the point ${k} left.`}}
+   if(t===2){const k=R(2,3);const y=shift2(x,-k);return{q:`${fmt(x)} ÷ ? = ${fmt(y)}`,...opts(big(10**k),[big(10**(k-1)),big(10**(k+1)),"0.1"]),why:`The point moved ${k} places left, so it was ÷ ${big(10**k)}.`}}
+   const k=R(2,4);return{q:`${fmt(x)} × 10${["","","²","³","⁴"][k]} = ?`,...opts(fmt(shift2(x,k)),[fmt(shift2(x,k-1)),fmt(shift2(x,k+1)),fmt(D(x.i*k,x.p))]),why:`10${["","","²","³","⁴"][k]} is 1 followed by ${k} zeros: move the point ${k} right.`}},
+ m7(){const t=R(0,2);
+   if(t===0){const a=D(R(201,999),2),b=D(R(11,99),1);const w=a.i*b.i;return{q:`A garden is ${fmt(a)} m long and ${fmt(b)} m wide. What is its area?`,...opts(fmt(D(w,3))+" sq m",[fmt(D(w,2))+" sq m",fmt(D(w,4))+" sq m",fmt(D(a.i*10+b.i*10,2))+" sq m"]),why:`Area = length × width: ${a.i} × ${b.i} = ${w}, then 2 + 1 = 3 places.`}}
+   if(t===1){const a=D(R(101,999),2),b=D(R(11,99),2);const w=a.i*b.i;return{q:`${fmt(a)} × ${fmt(b)} = ?`,...opts(fmt(D(w,4)),[fmt(D(w,2)),fmt(D(w,3)),fmt(D(w,5))]),why:`${a.i} × ${b.i} = ${w}; 2 + 2 = 4 places.`}}
+   const a=D(R(41,99),1),b=D(R(41,99),2);const v=val(a)*val(b);const near=Math.round(Math.round(val(a))*val(b)*10)/10;
+   const choices=[near,near*10,near/10,Math.round(near*100)/10].map(x=>String(Math.round(x*1000)/1000));const c=choices[0];
+   return{q:`Without working it out exactly: ${fmt(a)} × ${fmt(b)} is closest to...`,...opts(c,choices.slice(1)),why:`Round ${fmt(a)} to ${Math.round(val(a))}: ${Math.round(val(a))} × ${fmt(b)} ≈ ${c}. Exact: ${fmt(mulD(a,b))}.`}},
+ m8(){if(Math.random()<.5){const fs=[D(R(1,9),1),D(R(1,9),2),D(R(1,9)*(Math.random()<.5?5:1),1)];const w=fs.reduce((s,f)=>s*f.i,1),p=fs.reduce((s,f)=>s+f.p,0);
+     return{q:`${fs.map(fmt).join(" × ")} = ?`,...opts(fmt(D(w,p)),[fmt(D(w,p-1)),fmt(D(w,p+1)),fmt(D(w,Math.max(0,p-2)))]),why:`Multiply ${fs.map(f=>f.i).join(" × ")} = ${w}; ${p} places total.`}}
+   const a=D(R(2,9),2),b=D(R(2,9),2);const pr=mulD(a,b);return{q:`${fmt(a)} × ? = ${fmt(pr)}`,...opts(fmt(b),[fmt(D(b.i,1)),fmt(D(b.i,3)),fmt(D(b.i*10,2))]),why:`${a.i} × ${b.i} = ${a.i*b.i}, and the answer has ${pr.p} places, so ? has ${pr.p-a.p}.`}},
+ // ----- grammar -----
+ g1(){const [s1]=twoPeople(),[p1]=twoP();const t=R(0,5);
+   const X=[[`I wonder whether ${s1} will ${p1[1]}.`,"statement","It talks about a question but doesn't ask one: statement."],
+     [`Let's ${p1[1]} ${pick(PP)}.`,"command","\"Let's\" tells the group to do something: command."],
+     [`Before you leave the room, ${p1[1]}.`,"command","The main clause tells (You) to do something."],
+     [`How quickly ${s1} ${p1[0]}!`,"exclamation","Strong feeling with \"How...!\": exclamation."],
+     [`Do you know whether ${s1} ${p1[0]}?`,"question","It asks and ends with ?: question."],
+     [`${cap(s1)} asked why we had to ${p1[1]}.`,"statement","It reports a question, so it's a statement."]][t];
+   return{q:`"${X[0]}"`,o:["statement","question","command","exclamation"],a:X[1],why:X[2]}},
+ g2(){const [s1]=twoPeople(),[p1]=twoP();const w=p1[1].split(" ");const t=R(0,2);
+   const x=[`${cap(s1)}, when you finish dinner, please ${p1[1]}.`,`Let's ${p1[1]} ${pick(PP)}.`,`If ${s1} asks you, ${p1[1]}.`][t];
+   const wr=[[cap(s1),"you (in \"when you finish\")",w[0]],["us","Let's",w[w.length-1]],[s1,"you (in \"asks you\")",w[w.length-1]]][t];
+   return{q:`Subject of the main clause: "${x}"`,...opts("(You)",wr),why:"The main clause is a command, so its subject is the hidden (You). Names said to someone are just who you're talking to."}},
+ g3(){const H=[["a basket of ripe apples","basket","apples"],["the keys to the shed","keys","shed"],["the leader of the scouts","leader","scouts"],["a box of old toys","box","toys"],["the friends from my soccer camp","friends","camp"],["a crowd of noisy fans","crowd","fans"]];const h=pick(H),[p1]=twoP();const t=R(0,2);
+   const x=[`${cap(pick(["near the back door","under the old oak tree","behind the gym"]))} sat ${h[0]}.`,`Where did ${h[0]} ${p1[1]}?`,`There ${h[1].endsWith("s")&&h[1]!=="box"?"were":"was"} ${h[0]} ${pick(["near the back door","under the old oak tree","behind the gym"])}.`][t];
+   return{q:`Simple subject: "${x}"`,...opts(h[1],[h[2],t===2?"There":t===1?"Where":"door",p1[0].split(" ")[0]]),why:"Turn it around to normal order: who or what is doing it? \"There\" and \"Where\" are never the subject."}},
+ g4(){const [s1,s2,s3]=twoPeople(),[p1,p2,p3]=twoP();const t=R(0,3);const x=[
+     [`${cap(s1)} and ${s2} ${p1[0]} and ${p2[0]} ${pick(PP)}.`,"1"],[`${cap(s1)} ${p1[0]} and ${p2[0]}, but ${s2} ${p3[0]}.`,"2"],
+     [`${cap(s1)} ${p1[0]}, ${s2} ${p2[0]}, and ${s3} ${p3[0]}.`,"3"],[`${cap(pick(SUB))} ${s1} ${p1[0]}, ${s2} ${p2[0]} and ${p3[0]}.`,"1"]][t];
+   return{q:`How many independent clauses? "${x[0]}"`,o:["1","2","3","4"],a:x[1],why:"Count subject + verb groups that could stand alone. Two verbs sharing one subject is still one clause; a because/when clause doesn't count."}},
+ g5(){const [s1,s2]=twoPeople(),[p1,p2]=twoP();const t=R(0,1);
+   if(t===0){const rc=`who ${p1[0]}`;const x=`${cap(s1)}, ${rc}, ${p2[0]} ${pick(PP)}.`;return{q:`Which part is the dependent clause? "${x}"`,...opts(rc,[`${s1} ${p2[0]}`,x.match(/(after|before|during|under|in|with|since|at|without|near) [^.]+/)?.[0]||"the old fence",p2[0]]),why:"\"who...\" has a verb but can't stand alone: it's a dependent (relative) clause."}}
+   const sb=pick(SUB),dc=`${sb} ${s1} ${p1[0]}`,pp=pick(PP);const x=`${cap(s2)} ${p2[0]} ${pp} ${dc}.`;
+   return{q:`Which part is the dependent clause? "${x}"`,...opts(dc,[pp,`${s2} ${p2[0]}`,`${s1} ${p1[0]}`]),why:`It starts with "${sb}" and has its own subject and verb.`}},
+ g6(){const [s1,s2]=twoPeople(),[p1,p2]=twoP();const t=R(0,3);const X=[
+     [`${cap(s1)} ${p1[0]} so that ${s2} could ${p2[1]}.`,"complex","\"So that\" is a because-type word, not FANBOYS: complex."],
+     [`${cap(s1)} ${p1[0]} for the coach ${pick(PP)}.`,"simple","Here \"for\" starts a phrase (for the coach), not a clause."],
+     [`${cap(s1)} ${p1[0]}, for ${s2} ${p2[0]}.`,"compound","Here \"for\" means because and joins two full sentences: compound."],
+     [`${cap(s1)}, who ${p1[0]}, ${p2[0]}.`,"complex","A \"who\" clause is a dependent clause: complex."]][t];
+   return{q:`"${X[0]}"`,o:["simple","compound","complex"],a:X[1],why:X[2]}},
+ g7(){const [s1,s2,s3]=twoPeople(),[p1,p2,p3]=twoP();const t=R(0,4);const sb=pick(SUB),sb2=pick(SUB.filter(w=>w!==sb));const X=[
+     [`${cap(sb)} ${s1} ${p1[0]} ${sb2} ${s2} ${p2[0]}, ${s3} ${p3[0]}.`,"complex","Two dependent clauses but only ONE independent clause: complex."],
+     [`${cap(s1)}, who ${p1[0]}, ${p2[0]}, but ${s2} ${p3[0]}.`,"compound-complex","Two independent clauses (but) plus a \"who\" clause."],
+     [`${cap(pick(PP))} and ${pick(PP)}, ${s1} ${p1[0]}, ${p2[0]}, and ${p3[0]}.`,"simple","One subject with three verbs and only phrases: simple."],
+     [`${cap(s1)} ${p1[0]} ${sb} ${s2} ${p2[0]}, so ${s3} ${p3[0]}.`,"compound-complex","Two independent clauses (so) plus a dependent clause."],
+     [`${cap(s1)} ${p1[0]} so that ${s2} could ${p2[1]}, and ${s3} ${p3[0]}.`,"compound-complex","\"So that\" is dependent; \"and\" joins two independent clauses."]][t];
+   return{q:`"${X[0]}"`,o:["simple","compound","complex","compound-complex"],a:X[1],why:X[2]}},
+ g8(){const [s1,s2]=twoPeople(),[p1,p2]=twoP();const t=R(0,1);
+   if(t===0){const x=`${cap(s1)} who ${p1[0]} ${pick(PP)}.`;return{q:`"${x}"`,o:["fragment","run-on","comma splice","correct"],a:"fragment",why:"\"who...\" describes the person, but nothing says what they DID: fragment."}}
+   const a=IC(s1,p1),b=IC(s2,p2);return{q:`Best fix for: "${cap(a)}, ${b}."`,...opts(`${cap(a)}, ${pick(FAN)} ${b}.`,[`${cap(a)}, then ${b}.`,`${cap(a)} and, ${b}.`,`${cap(pick(SUB))} ${a}.`]),why:"Fix a comma splice with comma + FANBOYS, a period, or a because-word. \"Then\" is not a FANBOYS word."}},
+ g9(){const [s1,s2,s3]=twoPeople(),[p1,p2,p3]=twoP();const sb=pick(SUB),f=pick(FAN);
+   const good=`${cap(sb)} ${s1} ${p1[0]}, ${s2} ${p2[0]}, ${f} ${s3} ${p3[0]}.`;
+   return{q:"Which is punctuated correctly?",...opts(good,[`${cap(sb)} ${s1} ${p1[0]} ${s2} ${p2[0]} ${f}, ${s3} ${p3[0]}.`,`${cap(sb)}, ${s1} ${p1[0]}, ${s2} ${p2[0]} ${f} ${s3} ${p3[0]}.`,`${cap(sb)} ${s1} ${p1[0]} ${s2} ${p2[0]}, ${f} ${s3} ${p3[0]}.`]),why:"Comma after the opening dependent clause AND a comma before the FANBOYS word."}}
+};
+function shift2(x,k){if(k>=0)return x.p>=k?D(x.i,x.p-k):D(x.i*10**(k-x.p),0);return D(x.i,x.p-k)}
+const mulD=(a,b)=>D(a.i*b.i,a.p+b.p);
+
+
+const HW={
+ m3(){const x=D(R(10001,49999),3);const keep=pick([1,2]);const r=roundD(x,keep);const it=pick(["giant pumpkin weighs","bag of candy weighs","cauldron holds"]);const u=it.includes("holds")?"liters":"kg";
+   return{q:`A ${it} ${fmt(x)} ${u}. Round it to the nearest ${keep===1?"tenth":"hundredth"}.`,...opts(fmtK(r,keep),[fmtK(D(Math.floor(x.i/10**(3-keep)),keep),keep),fmt(roundD(x,keep+1)),fmtK(D(r.i+1,keep),keep),fmtK(D(Math.max(0,r.i-1),keep),keep)]),why:"Look one place to the right: 5 or more rounds up."}},
+ m4(){const n=["Sam","Leo","Mia"];const xs=[D(R(101,999),2),D(R(11,99),1),D(R(1001,4999),3)];const P=3;const tot=xs.reduce((t,x)=>t+x.i*10**(P-x.p),0);
+   if(Math.random()<.5)return{q:`Candy hauls: ${n[0]} ${fmt(xs[0])} lb, ${n[1]} ${fmt(xs[1])} lb, ${n[2]} ${fmt(xs[2])} lb. Total?`,...opts(fmt(D(tot,P))+" lb",[fmt(D(xs[0].i+xs[1].i+xs[2].i,3))+" lb",fmt(D(tot+100,P))+" lb",fmt(D(tot-10,P))+" lb"]),why:"Line up the points, fill zeros, then add."};
+   const a=D(R(1201,2999),2),b=D(R(501,1199),2);return{q:`One pumpkin weighs ${fmt(a)} kg and another weighs ${fmt(b)} kg. How much heavier is the first?`,...opts(fmt(D(a.i-b.i,2))+" kg",[fmt(D(a.i+b.i,2))+" kg",fmt(D(a.i-b.i+100,2))+" kg",fmt(D(Math.abs(a.i-b.i-10),2))+" kg"]),why:"Asking how much heavier means subtract. Line up the points."}},
+ m5(){const h=R(112,348),c=R(13,48);return{q:`${h} houses each give out ${c} pieces of candy. How many pieces in all?`,...opts(big(h*c),[big(h*(c%10)+h*Math.floor(c/10)),big(h*c+h),big(h*c-10*h)]),why:"Equal groups means multiply. Row 2 starts with a zero."}},
+ m6(){if(Math.random()<.5){const w=D(R(11,99),2);return{q:`One candy weighs ${fmt(w)} oz. How much do 1,000 candies weigh?`,...opts(fmt(shift2(w,3))+" oz",[fmt(shift2(w,2))+" oz",fmt(shift2(w,-3))+" oz",fmt(shift2(w,4))+" oz"]),why:"× 1,000: move the point 3 places right."}}
+   const b=D(R(11,99),1);return{q:`A bag of 100 eyeball gummies weighs ${fmt(b)} lb. How much does one gummy weigh?`,...opts(fmt(shift2(b,-2))+" lb",[fmt(shift2(b,-1))+" lb",fmt(shift2(b,2))+" lb",fmt(shift2(b,-3))+" lb"]),why:"÷ 100: move the point 2 places left."}},
+ m7(){const pr=D(R(201,899),2),m=D(R(11,49),1);const w=pr.i*m.i;return{q:`Cape fabric costs $${fmtK(pr,2)} per meter. What do ${fmt(m)} meters cost?`,...opts("$"+fmtK(roundD(D(w,3),2),2),["$"+fmt(D(w,2)),"$"+fmt(D(w,4)),"$"+fmtK(D(pr.i+m.i*10,2),2)]),why:`${pr.i} × ${m.i} = ${w}; 2 + 1 = 3 places → ${fmt(D(w,3))}, which is $${fmtK(roundD(D(w,3),2),2)}.`}},
+ m8(){const sp=D(R(2,9),2),t=D(R(2,9),1);const w=sp.i*t.i;return{q:`A spider crawls ${fmt(sp)} m each second. How far does it crawl in ${fmt(t)} of a second?`,...opts(fmt(D(w,3))+" m",[fmt(D(w,2))+" m",fmt(D(w,4))+" m",fmt(D(w,1))+" m"]),why:`${sp.i} × ${t.i} = ${w}; 3 places, so fill zeros in front.`}}
+};
+const MOTTO={m1:"Each place is ten times the place to its right",m2:"Add zeros then compare from the left",m3:"Look right and five or more rounds up",m4:"Line up the points",m5:"Each new row starts with a zero",m6:"Count the zeros and move the point",m7:"Multiply then count places in both numbers",m8:"Fill zeros in front",
+ g1:"A command tells someone to do something",g2:"The subject of a command is you",g3:"Find the verb first",g4:"A compound sentence needs two sentences",g5:"A clause has a subject and a verb",g6:"FANBOYS make compound and because makes complex",g7:"Count the independent clauses then look for a dependent one",g8:"A comma alone cannot join two sentences",g9:"Comma before FANBOYS and after a first dependent clause"};
+
+
+// ---------- unlock theater ----------
+const SKILLS={m7:"Multiply decimals",m8:"Zero traps",m5:"Long multiplication",m6:"Powers of 10",m4:"Add & subtract decimals",m3:"Rounding",m2:"Compare decimals",m1:"Place value",
+ g7:"Simple / compound / complex / compound-complex",g6:"Joining words (FANBOYS vs because)",g8:"Fragments, run-ons, comma splices",g9:"Commas",g5:"Clauses vs phrases",g4:"Compound parts",g3:"Subject & predicate",g2:"Hidden You",g1:"Sentence types"};
+const LS=k=>{try{return JSON.parse(localStorage.getItem(k)||"null")}catch(e){return null}};
+const SV=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+let cfg=LS("ut-cfg")||{vids:"",secs:75,skills:Object.keys(SKILLS),start:5};
+let stats=LS("ut-stats")||{};let seen=new Set(LS("ut-seen")||[]);
+let player=null,ready=false,locked=false,nextLock=0,keys=0,streak=0,lvl=cfg.start,unlocks=0,poll=null,curVid=null;
+const app=document.getElementById("app");
+const esc=s=>String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;");
+function vidId(u){const m=String(u).match(/(?:v=|youtu\.be\/|shorts\/|embed\/)([\w-]{11})/);return m?m[1]:(/^[\w-]{11}$/.test(u.trim())?u.trim():null)}
+function makeQ(k,L){for(let t=0;t<60;t++){const q=(L>=4&&HW[k]&&Math.random()<.3)?HW[k]():(L>=5?H5[k]():(Q[k]||G[k])(L));q.o=shuffle(q.o.slice());q.k=k;const key=k+"|"+q.q+"|"+q.o.slice().sort().join("/");if(!seen.has(key)){seen.add(key);SV("ut-seen",[...seen].slice(-5000));return q}}return L>1?makeQ(k,L-1):(seen=new Set(),makeQ(k,5))}
+function rec(k,ok){const s=stats[k]||(stats[k]={n:0,ok:0});s.n++;if(ok)s.ok++;SV("ut-stats",stats)}
+
+function setup(){
+  app.innerHTML=`<div class="top"><h1>Unlock Theater</h1><span class="chip">🔒 the video stops every minute. Solve to unlock.</span></div>
+  <div class="panel"><b>Coach setup</b>
+   <label class="muted" for="v">YouTube links (one per line, approved by a parent)</label><textarea id="v" rows="5" placeholder="https://www.youtube.com/watch?v=...">${esc(cfg.vids)}</textarea>
+   <div class="row"><label class="muted" for="s" style="align-self:center">Seconds of video per unlock</label><input type="number" id="s" min="20" max="300" value="${cfg.secs}" style="width:110px">
+   <label class="muted" for="lv" style="align-self:center">Start level (5 = hardest)</label><input type="number" id="lv" min="1" max="5" value="${cfg.start}" style="width:80px"></div>
+   <div class="muted">Skills in the mix</div><div class="skills">${Object.entries(SKILLS).map(([k,n])=>`<label><input type="checkbox" value="${k}" ${cfg.skills.includes(k)?"checked":""}> ${n}</label>`).join("")}</div>
+   <div class="row"><button class="btn go" id="go">Start the show</button><button class="btn" id="rep">Report</button></div></div>`;
+  document.getElementById("go").onclick=()=>{cfg={vids:document.getElementById("v").value,secs:Math.max(20,+document.getElementById("s").value||75),start:Math.min(5,Math.max(1,+document.getElementById("lv").value||5)),skills:[...app.querySelectorAll(".skills input:checked")].map(x=>x.value)};
+    if(!cfg.skills.length)cfg.skills=["m7"];SV("ut-cfg",cfg);lvl=cfg.start;theater()};
+  document.getElementById("rep").onclick=report;
+}
+function theater(){
+  const ids=cfg.vids.split(/\s+/).map(vidId).filter(Boolean);
+  app.innerHTML=`<div class="top"><h1>Unlock Theater</h1><div class="chips"><span class="chip" id="ck">🗝️ ${keys}</span><span class="chip" id="sk">🔥 ${streak}</span><span class="chip" id="un">🔓 ${unlocks}</span><span class="chip" id="lvc">Level ${lvl}</span><button class="btn" id="back" style="font-size:14px;padding:6px 10px">Setup</button></div></div>
+  <div class="vids">${ids.map((id,j)=>`<button class="btn" data-v="${id}">🎬 Video ${j+1}</button>`).join("")||'<span class="muted">Add YouTube links in Setup.</span>'}</div>
+  <div class="stage"><div id="yt"></div><div class="lock" id="lk" hidden></div></div>
+  <div class="bar"><i id="pb" style="width:0%"></i></div>
+  <div class="row"><button class="btn go" id="pp">▶ Play</button><button class="btn" id="usekey">Use a 🗝️ golden key</button></div>
+  <p class="muted" style="margin:0">Every ${cfg.secs} seconds the door locks. Answer right to unlock the next part. 3 right in a row earns a golden key that skips one lock.</p>`;
+  document.getElementById("back").onclick=()=>{stopAll();setup()};
+  app.querySelectorAll("[data-v]").forEach(b=>b.onclick=()=>load(b.dataset.v));
+  document.getElementById("pp").onclick=()=>{if(!player||locked)return;const s=player.getPlayerState();s===1?player.pauseVideo():player.playVideo()};
+  document.getElementById("usekey").onclick=()=>{if(locked&&keys>0){keys--;chips();unlock("🗝️ Golden key used!")}};
+  if(ids.length)load(ids[0]);
+}
+function chips(){const s=(id,t)=>{const e=document.getElementById(id);if(e)e.textContent=t};s("ck","🗝️ "+keys);s("sk","🔥 "+streak);s("un","🔓 "+unlocks);s("lvc","Level "+lvl)}
+function stopAll(){clearInterval(poll);poll=null;try{player&&player.destroy()}catch(e){}player=null}
+function load(id){stopAll();curVid=id;locked=false;nextLock=cfg.secs;document.getElementById("lk").hidden=true;
+  const mk=()=>{player=new YT.Player("yt",{videoId:id,playerVars:{controls:0,disablekb:1,modestbranding:1,rel:0,fs:0,playsinline:1},
+    events:{onStateChange:e=>{if(locked&&e.data===1)player.pauseVideo();const pp=document.getElementById("pp");if(pp)pp.textContent=e.data===1?"⏸ Pause":"▶ Play"}}});
+    poll=setInterval(tick,400)};
+  if(window.YT&&YT.Player)mk();else window.onYouTubeIframeAPIReady=mk;
+}
+function tick(){if(!player||!player.getCurrentTime)return;const t=player.getCurrentTime(),d=player.getDuration()||1;
+  const pb=document.getElementById("pb");if(pb)pb.style.width=Math.min(100,100*t/d)+"%";
+  if(!locked&&t>=nextLock&&t<d-3){lockNow()}}
+function lockNow(){locked=true;player.pauseVideo();ask(false)}
+function ask(retry){const lk=document.getElementById("lk");lk.hidden=false;
+  const k=pick(cfg.skills);const q=makeQ(k,lvl);
+  lk.innerHTML=`<div class="door">🚪🔒</div><div class="muted" style="font-family:var(--disp);font-size:13px">${retry?"ONE MORE TO UNLOCK":"KEEP THE DOOR LOCKED... UNLESS YOU SOLVE IT"} · ${esc(SKILLS[k])} · level ${lvl}</div>
+   <div class="q">${esc(q.q)}</div><div class="opts">${q.o.map((o,j)=>`<button class="opt" data-o="${j}"><b>${"ABCD"[j]}</b>${esc(o)}</button>`).join("")}</div><div class="msg" id="m"></div>`;
+  lk.querySelectorAll("[data-o]").forEach(b=>b.onclick=()=>{const ok=q.o[+b.dataset.o]===q.a;rec(k,ok);
+    lk.querySelectorAll("[data-o]").forEach(x=>x.disabled=true);
+    if(ok){streak++;if(streak%3===0){keys++}if(streak>=2&&lvl<5)lvl++;chips();
+      if(unlocks%3===2)return explain(q,k);unlock(streak%3===0?"🔓 Unlocked! +1 🗝️ golden key":"🔓 Unlocked!")}
+    else{streak=0;if(lvl>1)lvl--;chips();const m=document.getElementById("m");m.className="msg b";
+      m.innerHTML=`Not that one. Answer: ${esc(q.a)}<div class="why">${esc(q.why)}</div><div class="why">Type the rule to try again:</div><div style="color:var(--gold);font-family:var(--mono)">${esc(MOTTO[k])}</div><input class="ty" id="ty" autocomplete="off" aria-label="Type the rule"> <button class="btn go" id="tyok">Done</button>`;
+      const ty=document.getElementById("ty"),nz=x=>x.toLowerCase().replace(/[^a-z0-9]/g,"");ty.focus();
+      const go=()=>{if(nz(ty.value)===nz(MOTTO[k]))ask(true);else ty.style.borderColor="var(--bad)"};document.getElementById("tyok").onclick=go;ty.onkeydown=e=>{if(e.key==="Enter")go()}}})}
+function explain(q,k){const lk=document.getElementById("lk");const others=shuffle(Object.keys(MOTTO).filter(x=>x!==k)).slice(0,2);const ch=shuffle([k,...others]);
+  lk.innerHTML=`<div class="door">🧠</div><div class="q">Right! Now prove it: which rule did you use?</div><div class="muted">${esc(q.q)} → ${esc(q.a)}</div>
+   <div class="opts">${ch.map(x=>`<button class="opt" data-r="${x}">${esc(MOTTO[x])}</button>`).join("")}</div><div class="msg" id="m"></div>`;
+  lk.querySelectorAll("[data-r]").forEach(b=>b.onclick=()=>{if(b.dataset.r===k)unlock("🔓 Unlocked! You know WHY.");else{b.disabled=true;const m=document.getElementById("m");m.className="msg b";m.textContent="Not that rule. Look at the question again."}})}
+function unlock(text){const lk=document.getElementById("lk");unlocks++;chips();lk.innerHTML=`<div class="door">🔓</div><div class="q" style="color:var(--good)">${esc(text)}</div>`;
+  setTimeout(()=>{lk.hidden=true;locked=false;nextLock=player.getCurrentTime()+cfg.secs;player.playVideo()},900)}
+function report(){const rows=Object.entries(stats);const txt="Unlock Theater report ("+new Date().toLocaleDateString()+")\n"+rows.map(([k,s])=>`- ${SKILLS[k]}: ${s.ok}/${s.n} right (${Math.round(100*s.ok/s.n)}%)`).join("\n");
+  app.innerHTML=`<div class="top"><h1>Report</h1><button class="btn" id="b">Back</button></div><div class="panel"><table><tr><th>Skill</th><th>Right</th><th>%</th></tr>${rows.map(([k,s])=>`<tr><td>${SKILLS[k]}</td><td>${s.ok}/${s.n}</td><td>${Math.round(100*s.ok/s.n)}%</td></tr>`).join("")||'<tr><td colspan="3" class="muted">No answers yet.</td></tr>'}</table>
+  <textarea rows="6" readonly>${esc(txt)}</textarea><div class="row"><button class="btn" id="cp">Copy</button><button class="btn" id="clr">Clear stats</button></div></div>`;
+  document.getElementById("b").onclick=setup;document.getElementById("cp").onclick=()=>navigator.clipboard&&navigator.clipboard.writeText(txt);
+  let armed=false;document.getElementById("clr").onclick=e=>{if(!armed){armed=true;e.target.textContent="Tap again to clear";return}stats={};SV("ut-stats",stats);report()}}
+setup();
+</script></body></html>
